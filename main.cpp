@@ -1,0 +1,971 @@
+// dx_ball_visuals.cpp (bricks centered)
+// Compile: g++ dx_ball_visuals_centered_bricks.cpp -o dx_ball_visuals -lGL -lGLU -lglut
+#include <GL/glut.h>
+#include <stdbool.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+
+// -------------------------- Game config --------------------------
+enum GameState { STATE_MENU, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_PAUSED, STATE_GAMEOVER, STATE_WIN };
+GameState state = STATE_MENU;
+
+// Paddle
+float paddleX = 0.0f;
+float paddleWidth = 0.30f;
+const float paddleHeight = 0.05f;
+const float PADDLE_MIN_WIDTH = 0.12f;
+const float PADDLE_MAX_WIDTH = 0.7f;
+
+// Ball
+float ballX = 0.0f, ballY = -0.5f;
+float ballDX = 0.008f, ballDY = 0.01f;
+float ballSpeedMultiplier = 1.0f;
+const float ballRadius = 0.03f;
+bool ballMoving = false;
+
+// Ball trail (store last positions for simple motion blur)
+#define TRAIL_LEN 8
+float trailX[TRAIL_LEN];
+float trailY[TRAIL_LEN];
+
+// Bricks
+#define ROWS 5
+#define COLS 8
+int bricks[ROWS][COLS];              // 1 = alive, 0 = removed
+float brickFade[ROWS][COLS];         // >0 means fading animation
+const float brickWidth = 0.22f;
+const float brickHeight = 0.08f;
+// spacing & computed start to center the grid
+float brickSpacingX = 0.02f;
+float brickSpacingY = 0.02f;
+float brickStartX = 0.0f; // computed so grid is centered
+float brickStartY = 0.0f; // computed so grid is centered
+
+// Score and Lives
+int score = 0;
+int lives = 3;
+
+// Power-ups
+enum PowerType { POWER_EXTRA_LIFE = 0, POWER_FASTER_BALL = 1, POWER_WIDER_PADDLE = 2 };
+struct PowerUp {
+    bool visible;
+    PowerType type;
+    float x, y;
+    float vy;
+} powerUps[ROWS*COLS];
+
+// Power-up durations
+bool paddleWidened = false;
+int paddleWidenEndTimeMs = 0;
+const int PADDLE_WIDEN_DURATION_MS = 10000; // 10s
+
+// Time tracking
+int gameStartTimeMs = 0;
+int pauseStartTimeMs = 0;
+int totalPausedMs = 0;
+
+// Ball speed increase over time
+int lastSpeedIncreaseCheckMs = 0;
+const int SPEED_INCREASE_INTERVAL_MS = 5000;
+const float SPEED_INCREASE_FACTOR = 1.05f;
+
+// Window
+int g_winW = 900, g_winH = 700;
+
+// Pause menu buttons (normalized coords)
+typedef struct { float left, right, top, bottom; const char* label; } Button;
+Button pauseButtons[3];
+
+// Utility text
+void drawText(float x, float y, const char* text) {
+    glRasterPos2f(x, y);
+    for (const char* c = text; *c != '\0'; ++c)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+}
+
+// -------------------------- Brick layout helper --------------------------
+void computeBrickLayout() {
+    float totalW = COLS * brickWidth + (COLS - 1) * brickSpacingX;
+    float totalH = ROWS * brickHeight + (ROWS - 1) * brickSpacingY;
+    // center the grid around (0,0)
+    brickStartX = -totalW * 0.5f;
+    brickStartY = totalH * 0.5f;
+}
+
+// -------------------------- Game control --------------------------
+void resetBall() {
+    ballX = 0.0f;
+    ballY = -0.5f;
+    ballDX = 0.008f * ((rand() % 2) ? 1.0f : -1.0f);
+    ballDY = 0.01f;
+    ballSpeedMultiplier = 1.0f;
+    ballMoving = false;
+    // clear trail
+    for (int i = 0; i < TRAIL_LEN; ++i) { trailX[i] = ballX; trailY[i] = ballY; }
+}
+
+void resetGame() {
+    score = 0;
+    lives = 3;
+    paddleWidth = 0.30f;
+    paddleWidened = false;
+    paddleWidenEndTimeMs = 0;
+    totalPausedMs = 0;
+    gameStartTimeMs = glutGet(GLUT_ELAPSED_TIME);
+    lastSpeedIncreaseCheckMs = gameStartTimeMs;
+    for (int i=0; i<ROWS; ++i) for (int j=0; j<COLS; ++j) { bricks[i][j] = 1; brickFade[i][j] = 0.0f; }
+    for (int i=0; i<ROWS*COLS; ++i) powerUps[i].visible = false;
+    computeBrickLayout();
+    resetBall();
+}
+
+// -------------------------- Visual improvements --------------------------
+
+void drawInstructionsOverlay() {
+    // dim background
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0,0,0,0.7f);
+    glBegin(GL_QUADS);
+        glVertex2f(-1,-1); glVertex2f(1,-1);
+        glVertex2f(1,1);  glVertex2f(-1,1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // panel
+    float panelW = 0.7f, panelH = 0.6f;
+    glColor3f(0.1f,0.1f,0.15f);
+    glBegin(GL_QUADS);
+        glVertex2f(-panelW/2, panelH/2);
+        glVertex2f(panelW/2, panelH/2);
+        glVertex2f(panelW/2, -panelH/2);
+        glVertex2f(-panelW/2, -panelH/2);
+    glEnd();
+
+    // title
+    glColor3f(1,1,1);
+    drawText(-0.12f, 0.22f, "Instructions");
+
+    // instructions text
+    drawText(-0.25f, 0.12f, "• Mouse to move paddle");
+    drawText(-0.25f, 0.05f, "• A / D or Arrow Keys to move");
+    drawText(-0.25f, -0.02f, "• SPACE to launch the ball");
+    drawText(-0.25f, -0.09f, "• P to pause/resume");
+    drawText(-0.25f, -0.16f, "• Esc to exit game");
+
+    drawText(-0.25f, -0.28f, "Click anywhere to return to menu");
+}
+
+// Gradient background
+void drawBackground() {
+    glBegin(GL_QUADS);
+        // top-left (slightly bluish)
+        glColor3f(0.02f, 0.03f, 0.12f); glVertex2f(-1.0f,  1.0f);
+        // top-right
+        glColor3f(0.07f, 0.05f, 0.2f);  glVertex2f( 1.0f,  1.0f);
+        // bottom-right (darker)
+        glColor3f(0.01f, 0.01f, 0.05f); glVertex2f( 1.0f, -1.0f);
+        // bottom-left
+        glColor3f(0.01f, 0.01f, 0.05f); glVertex2f(-1.0f, -1.0f);
+    glEnd();
+
+    // subtle stars (random seed stable by frame)
+    int t = glutGet(GLUT_ELAPSED_TIME) / 700;
+    srand(t);
+    glPointSize(1.5f);
+    glBegin(GL_POINTS);
+    for (int i=0;i<30;i++) {
+        float sx = (rand()%200 - 100)/100.0f;
+        float sy = (rand()%140 - 70)/100.0f;
+        float alpha = 0.4f + (rand()%60)/150.0f;
+        glColor4f(0.9f, 0.9f, 1.0f, alpha);
+        glVertex2f(sx, sy);
+    }
+    glEnd();
+}
+
+// Paddle with gradient/shading
+void drawPaddle() {
+    // center colors vary a bit over time for subtle liveliness
+    float t = glutGet(GLUT_ELAPSED_TIME)/1000.0f;
+    float pulse = 0.05f * sinf(t*2.0f);
+
+    // top gradient
+    glBegin(GL_QUADS);
+        glColor3f(0.12f + pulse, 0.45f + pulse, 0.95f); // top-left
+        glVertex2f(paddleX - paddleWidth/2, -0.95f + paddleHeight);
+        glColor3f(0.02f + pulse, 0.25f + pulse, 0.7f);  // top-right
+        glVertex2f(paddleX + paddleWidth/2, -0.95f + paddleHeight);
+        glColor3f(0.0f, 0.12f, 0.3f);                    // bottom-right
+        glVertex2f(paddleX + paddleWidth/2, -0.95f);
+        glColor3f(0.05f, 0.2f, 0.6f);                    // bottom-left
+        glVertex2f(paddleX - paddleWidth/2, -0.95f);
+    glEnd();
+
+    // small bevel lines
+    glColor3f(0,0,0);
+    glLineWidth(1.0f);
+    glBegin(GL_LINE_LOOP);
+        glVertex2f(paddleX - paddleWidth/2, -0.95f + paddleHeight);
+        glVertex2f(paddleX + paddleWidth/2, -0.95f + paddleHeight);
+        glVertex2f(paddleX + paddleWidth/2, -0.95f);
+        glVertex2f(paddleX - paddleWidth/2, -0.95f);
+    glEnd();
+}
+
+// Ball glow (soft layered circles)
+void drawBallGlow() {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    for (int i = 5; i >= 1; --i) {
+        float a = 0.06f + 0.02f * i;
+        float r = ballRadius + 0.004f*i;
+        glColor4f(1.0f, 0.3f, 0.3f, a);
+        glBegin(GL_TRIANGLE_FAN);
+            glVertex2f(ballX, ballY);
+            for (int a_deg = 0; a_deg <= 360; a_deg += 12) {
+                float ang = a_deg * (3.1415926f / 180.0f);
+                glVertex2f(ballX + r * cosf(ang), ballY + r * sinf(ang));
+            }
+        glEnd();
+    }
+    glDisable(GL_BLEND);
+}
+
+// Ball core
+void drawBallCore() {
+    glColor3f(1.0f, 0.7f, 0.7f);
+    glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(ballX, ballY);
+        for (int a_deg = 0; a_deg <= 360; a_deg += 10) {
+            float ang = a_deg * (3.1415926f / 180.0f);
+            glVertex2f(ballX + ballRadius * cosf(ang), ballY + ballRadius * sinf(ang));
+        }
+    glEnd();
+}
+
+// Ball trail: draw faded circles at last positions
+void drawBallTrail() {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    for (int i = 0; i < TRAIL_LEN; ++i) {
+        float alpha = 0.10f * (1.0f - (float)i / TRAIL_LEN);
+        float r = ballRadius * (1.0f - 0.07f * i);
+        glColor4f(1.0f, 0.4f, 0.4f, alpha);
+        glBegin(GL_TRIANGLE_FAN);
+            glVertex2f(trailX[i], trailY[i]);
+            for (int a_deg = 0; a_deg <= 360; a_deg += 18) {
+                float ang = a_deg * (3.1415926f / 180.0f);
+                glVertex2f(trailX[i] + r * cosf(ang), trailY[i] + r * sinf(ang));
+            }
+        glEnd();
+    }
+    glDisable(GL_BLEND);
+}
+
+// Draw bricks - normal and fading-removed with animation
+void drawBricks() {
+    for (int i=0; i<ROWS; ++i) {
+        for (int j=0; j<COLS; ++j) {
+            float x = brickStartX + j * (brickWidth + brickSpacingX);
+            float y = brickStartY - i * (brickHeight + brickSpacingY);
+
+            if (bricks[i][j]) {
+                // main brick body with slight vertical gradient
+                glBegin(GL_QUADS);
+                    glColor3f(0.9f, 0.4f - i*0.06f, 0.2f + j*0.03f); glVertex2f(x, y);
+                    glColor3f(0.7f, 0.25f - i*0.04f, 0.15f + j*0.02f); glVertex2f(x + brickWidth, y);
+                    glColor3f(0.5f, 0.12f - i*0.02f, 0.10f + j*0.01f); glVertex2f(x + brickWidth, y - brickHeight);
+                    glColor3f(0.65f, 0.20f - i*0.03f, 0.12f + j*0.015f); glVertex2f(x, y - brickHeight);
+                glEnd();
+                // border
+                glColor3f(0.08f, 0.06f, 0.04f);
+                glLineWidth(1.5f);
+                glBegin(GL_LINE_LOOP);
+                    glVertex2f(x, y);
+                    glVertex2f(x + brickWidth, y);
+                    glVertex2f(x + brickWidth, y - brickHeight);
+                    glVertex2f(x, y - brickHeight);
+                glEnd();
+            }
+            // draw fading remnants if any
+            if (brickFade[i][j] > 0.001f) {
+                float f = brickFade[i][j];
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glColor4f(1.0f, 0.6f - i*0.05f, 0.25f + j*0.02f, f);
+                // simple expanding square fade
+                float inset = (1.0f - f) * 0.06f;
+                glBegin(GL_QUADS);
+                    glVertex2f(x - inset, y + inset);
+                    glVertex2f(x + brickWidth + inset, y + inset);
+                    glVertex2f(x + brickWidth + inset, y - brickHeight - inset);
+                    glVertex2f(x - inset, y - brickHeight - inset);
+                glEnd();
+                glDisable(GL_BLEND);
+            }
+        }
+    }
+}
+
+// Power-ups draw with pulse animation
+void drawPowerUps() {
+    int now = glutGet(GLUT_ELAPSED_TIME);
+    for (int i = 0; i < ROWS*COLS; ++i) {
+        if (!powerUps[i].visible) continue;
+        float s = 0.02f * (1.0f + 0.15f * sinf(now/250.0f + i));
+        switch (powerUps[i].type) {
+            case POWER_EXTRA_LIFE:   glColor3f(0.2f, 1.0f, 0.2f); break;
+            case POWER_FASTER_BALL:  glColor3f(1.0f, 0.6f, 0.6f); break;
+            case POWER_WIDER_PADDLE: glColor3f(0.6f, 0.8f, 1.0f); break;
+        }
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBegin(GL_QUADS);
+            glVertex2f(powerUps[i].x - 0.03f - s, powerUps[i].y + s);
+            glVertex2f(powerUps[i].x + 0.03f + s, powerUps[i].y + s);
+            glVertex2f(powerUps[i].x + 0.03f + s, powerUps[i].y - 0.05f - s);
+            glVertex2f(powerUps[i].x - 0.03f - s, powerUps[i].y - 0.05f - s);
+        glEnd();
+        glDisable(GL_BLEND);
+
+        // label
+        char label = 'L';
+        if (powerUps[i].type == POWER_FASTER_BALL) label = 'F';
+        if (powerUps[i].type == POWER_WIDER_PADDLE) label = 'W';
+        glColor3f(0,0,0);
+        char str[2] = {label, 0};
+        glRasterPos2f(powerUps[i].x - 0.01f, powerUps[i].y - 0.03f);
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, str[0]);
+    }
+}
+
+// HUD drawing
+void drawHUD() {
+    char buffer[64];
+    sprintf(buffer, "Score: %d", score);
+    drawText(-0.95f, 0.93f, buffer);
+
+    sprintf(buffer, "Lives: %d", lives);
+    drawText(0.75f, 0.93f, buffer);
+
+    int elapsedMs = 0;
+    if (state == STATE_PLAYING || state == STATE_PAUSED) {
+        int now = glutGet(GLUT_ELAPSED_TIME);
+        elapsedMs = now - gameStartTimeMs - totalPausedMs;
+    }
+    int seconds = elapsedMs / 1000;
+    sprintf(buffer, "Time: %02d:%02d", seconds / 60, seconds % 60);
+    drawText(-0.1f, 0.93f, buffer);
+
+    // -------------- MENU SCREEN --------------
+    if (state == STATE_MENU) {
+        drawText(-0.25f, 0.45f, "🎮 WELCOME TO DX-BALL 🎮");
+        drawText(-0.15f, 0.25f, "Click anywhere to start");
+
+        drawText(-0.25f, 0.05f, "Controls:");
+        drawText(-0.18f, -0.05f, "• Mouse to move paddle");
+        drawText(-0.18f, -0.12f, "• A / D or Arrow Keys to move");
+        drawText(-0.18f, -0.19f, "• SPACE to launch the ball");
+        drawText(-0.18f, -0.26f, "• P to pause/resume");
+        drawText(-0.18f, -0.33f, "• Esc to exit game");
+    }
+
+    // -------------- PAUSED SCREEN --------------
+    if (state == STATE_PAUSED) {
+        drawText(-0.15f, 0.1f, "⏸ GAME PAUSED ⏸");
+        drawText(-0.25f, -0.05f, "• Press P or click to resume");
+        drawText(-0.25f, -0.12f, "• Press Esc to quit to menu");
+    }
+
+    // -------------- GAME OVER SCREEN --------------
+    if (state == STATE_GAMEOVER) {
+        drawText(-0.25f, 0.2f, "💀 GAME OVER 💀");
+        sprintf(buffer, "Final Score: %d", score);
+        drawText(-0.18f, 0.05f, buffer);
+        drawText(-0.22f, -0.1f, "• Click to restart");
+        drawText(-0.22f, -0.18f, "• Press Esc to exit");
+    }
+
+    // -------------- WIN SCREEN --------------
+    if (state == STATE_WIN) {
+        drawText(-0.25f, 0.2f, "🏆 YOU WIN! 🏆");
+        sprintf(buffer, "Final Score: %d", score);
+        drawText(-0.18f, 0.05f, buffer);
+        drawText(-0.22f, -0.1f, "• Click to play again");
+        drawText(-0.22f, -0.18f, "• Press Esc to exit");
+    }
+}
+// Main Menu overlay with buttons
+void drawMenuScreenOverlay() {
+    // dim entire screen
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, 0.6f);
+    glBegin(GL_QUADS);
+        glVertex2f(-1, -1); glVertex2f(1, -1);
+        glVertex2f(1, 1);  glVertex2f(-1, 1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // center panel
+    float panelW = 0.7f, panelH = 0.6f;
+    glColor3f(0.1f, 0.1f, 0.15f);
+    glBegin(GL_QUADS);
+        glVertex2f(-panelW/2,  panelH/2);
+        glVertex2f( panelW/2,  panelH/2);
+        glVertex2f( panelW/2, -panelH/2);
+        glVertex2f(-panelW/2, -panelH/2);
+    glEnd();
+
+    // title
+    glColor3f(1, 1, 1);
+    drawText(-0.20f, 0.22f, "DX-Ball OpenGL");
+
+    // example menu buttons (3 items)
+    Button menuButtons[3];
+    menuButtons[0] = { -0.25f, 0.25f, 0.10f,  0.00f,  "Start Game" };
+    menuButtons[1] = { -0.25f, 0.25f, -0.05f, -0.15f, "Instructions" };
+    menuButtons[2] = { -0.25f, 0.25f, -0.20f, -0.30f, "Quit" };
+
+    for (int i=0; i<3; i++) {
+        Button b = menuButtons[i];
+        // button bg
+        glColor3f(0.18f, 0.18f, 0.22f);
+        glBegin(GL_QUADS);
+            glVertex2f(b.left, b.top);
+            glVertex2f(b.right, b.top);
+            glVertex2f(b.right, b.bottom);
+            glVertex2f(b.left, b.bottom);
+        glEnd();
+        // border
+        glColor3f(0.9f, 0.9f, 0.9f);
+        glLineWidth(1.0f);
+        glBegin(GL_LINE_LOOP);
+            glVertex2f(b.left, b.top);
+            glVertex2f(b.right, b.top);
+            glVertex2f(b.right, b.bottom);
+            glVertex2f(b.left, b.bottom);
+        glEnd();
+        // label centered
+        float tx = (b.left + b.right) * 0.5f - 0.09f;
+        float ty = (b.top + b.bottom) * 0.5f - 0.02f;
+        drawText(tx, ty, b.label);
+    }
+}
+
+// Main Menu Overlay
+void drawGameOverScreenOverlay() {
+    // Dim background
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, 0.6f);
+    glBegin(GL_QUADS);
+        glVertex2f(-1,-1); glVertex2f(1,-1);
+        glVertex2f(1,1); glVertex2f(-1,1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // Panel
+    float panelW = 0.6f, panelH = 0.5f;
+    glColor3f(0.1f,0.1f,0.15f);
+    glBegin(GL_QUADS);
+        glVertex2f(-panelW/2, panelH/2);
+        glVertex2f(panelW/2, panelH/2);
+        glVertex2f(panelW/2, -panelH/2);
+        glVertex2f(-panelW/2, -panelH/2);
+    glEnd();
+
+    // Title
+    glColor3f(1,0.2f,0.2f);
+    drawText(-0.18f, 0.15f, "💀 GAME OVER 💀");
+
+    // Score
+    char buffer[32];
+    sprintf(buffer, "Final Score: %d", score);
+    drawText(-0.15f, 0.05f, buffer);
+
+    // Instructions
+    drawText(-0.20f, -0.1f, "Click LEFT MOUSE to RESTART");
+    drawText(-0.15f, -0.18f, "Press ESC to QUIT");
+}
+
+// Pause menu overlay with buttons
+void drawPauseMenuOverlay() {
+    // dim entire screen
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0,0,0,0.6f);
+    glBegin(GL_QUADS);
+        glVertex2f(-1,-1); glVertex2f(1,-1); glVertex2f(1,1); glVertex2f(-1,1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // center panel
+    float panelW = 0.6f, panelH = 0.5f;
+    glColor3f(0.08f, 0.08f, 0.12f);
+    glBegin(GL_QUADS);
+        glVertex2f(-panelW/2,  panelH/2);
+        glVertex2f( panelW/2,  panelH/2);
+        glVertex2f( panelW/2, -panelH/2);
+        glVertex2f(-panelW/2, -panelH/2);
+    glEnd();
+
+    // title
+    glColor3f(1,1,1);
+    drawText(-0.12f, 0.18f, "Game Paused");
+
+    // draw buttons
+    for (int i=0;i<3;i++) {
+        Button b = pauseButtons[i];
+        // button bg
+        glColor3f(0.18f, 0.18f, 0.22f);
+        glBegin(GL_QUADS);
+            glVertex2f(b.left, b.top);
+            glVertex2f(b.right, b.top);
+            glVertex2f(b.right, b.bottom);
+            glVertex2f(b.left, b.bottom);
+        glEnd();
+        // border
+        glColor3f(0.9f, 0.9f, 0.9f);
+        glLineWidth(1.0f);
+        glBegin(GL_LINE_LOOP);
+            glVertex2f(b.left, b.top);
+            glVertex2f(b.right, b.top);
+            glVertex2f(b.right, b.bottom);
+            glVertex2f(b.left, b.bottom);
+        glEnd();
+        // label
+        float tx = (b.left + b.right) * 0.5f - 0.10f;
+        float ty = (b.top + b.bottom) * 0.5f - 0.02f;
+        drawText(tx, ty, b.label);
+    }
+}
+
+// Fireworks (simple)
+void drawFireworks() {
+    if (state != STATE_WIN) return;
+    int now = glutGet(GLUT_ELAPSED_TIME);
+    srand(now / 90);
+    for (int k=0;k<25;k++) {
+        float x = (rand()%200 - 100)/100.0f;
+        float y = (rand()%140 - 20)/100.0f;
+        float r = rand()%256/255.0f, g = rand()%256/255.0f, b = rand()%256/255.0f;
+        glColor3f(r,g,b);
+        glBegin(GL_LINES);
+            glVertex2f(x, y);
+            glVertex2f(x + (rand()%40 - 20)/200.0f, y + (rand()%40 - 20)/200.0f);
+        glEnd();
+    }
+}
+// -------------------------- Overlays --------------------------
+
+// Win screen overlay
+void drawWinScreenOverlay() {
+    // dim background
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, 0.6f);
+    glBegin(GL_QUADS);
+        glVertex2f(-1,-1); glVertex2f(1,-1);
+        glVertex2f(1,1);  glVertex2f(-1,1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // panel
+    float panelW = 0.6f, panelH = 0.5f;
+    glColor3f(0.1f, 0.1f, 0.15f);
+    glBegin(GL_QUADS);
+        glVertex2f(-panelW/2, panelH/2);
+        glVertex2f(panelW/2, panelH/2);
+        glVertex2f(panelW/2, -panelH/2);
+        glVertex2f(-panelW/2, -panelH/2);
+    glEnd();
+
+    // title
+    glColor3f(1,1,0.2f);
+    drawText(-0.18f, 0.15f, "🏆 YOU WIN! 🏆");
+
+    // final score
+    char buffer[32];
+    sprintf(buffer, "Final Score: %d", score);
+    drawText(-0.15f, 0.05f, buffer);
+
+    // instructions
+    drawText(-0.22f, -0.1f, "Click LEFT MOUSE to play again");
+    drawText(-0.22f, -0.18f, "Press ESC to exit");
+}
+
+// Fix GameOverOverlay function name
+void drawGameOverOverlay() {
+    drawGameOverScreenOverlay();
+}
+
+// -------------------------- Rendering callback --------------------------
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    drawBackground();
+
+    // Draw gameplay elements only when playing or paused
+    if (state == STATE_PLAYING || state == STATE_PAUSED) {
+        drawBricks();
+        drawBallTrail();
+        drawPaddle();
+        drawBallGlow();
+        drawBallCore();
+        drawPowerUps();
+    }
+
+    // HUD always on top
+    drawHUD();
+
+    // overlay depending on state
+    switch (state) {
+        case STATE_MENU:
+            drawMenuScreenOverlay();
+            break;
+        case STATE_INSTRUCTIONS:
+            drawInstructionsOverlay();
+            break;
+        case STATE_PAUSED:
+            drawPauseMenuOverlay();
+            break;
+        case STATE_GAMEOVER:
+            drawGameOverOverlay();
+            break;
+        case STATE_WIN:
+            drawWinScreenOverlay();
+            break;
+        default:
+            break;
+    }
+
+    // fireworks only for WIN
+    if (state == STATE_WIN) drawFireworks();
+
+    glutSwapBuffers();
+}
+
+
+// -------------------------- Game logic & collisions --------------------------
+void spawnPowerUp(float x, float y, PowerType t) {
+    for (int i=0;i<ROWS*COLS;i++) {
+        if (!powerUps[i].visible) {
+            powerUps[i].visible = true;
+            powerUps[i].type = t;
+            powerUps[i].x = x;
+            powerUps[i].y = y;
+            powerUps[i].vy = -0.008f - (rand()%8)/1000.0f;
+            break;
+        }
+    }
+}
+
+void update(int value) {
+    int now = glutGet(GLUT_ELAPSED_TIME);
+
+    // If not playing, skip movement updates (but keep timers & display updated)
+    if (state != STATE_PLAYING) {
+        glutPostRedisplay();
+        glutTimerFunc(16, update, 0);
+        return;
+    }
+
+    // global speed ramp
+    if (now - lastSpeedIncreaseCheckMs >= SPEED_INCREASE_INTERVAL_MS) {
+        lastSpeedIncreaseCheckMs = now;
+        ballDX *= SPEED_INCREASE_FACTOR;
+        ballDY *= SPEED_INCREASE_FACTOR;
+    }
+
+    // update trial positions (shift older values down)
+    for (int i = TRAIL_LEN - 1; i > 0; --i) { trailX[i] = trailX[i-1]; trailY[i] = trailY[i-1]; }
+    trailX[0] = ballX; trailY[0] = ballY;
+
+    if (lives > 0 && ballMoving) {
+        ballX += ballDX * ballSpeedMultiplier;
+        ballY += ballDY * ballSpeedMultiplier;
+
+        // walls
+        if (ballX + ballRadius > 1.0f) { ballX = 1.0f - ballRadius; ballDX = -fabs(ballDX); }
+        if (ballX - ballRadius < -1.0f) { ballX = -1.0f + ballRadius; ballDX = fabs(ballDX); }
+        if (ballY + ballRadius > 1.0f) { ballY = 1.0f - ballRadius; ballDY = -fabs(ballDY); }
+
+        // paddle collision
+        if (ballY - ballRadius <= -0.95f + paddleHeight &&
+            ballY - ballRadius >= -0.95f - 0.02f &&
+            ballX >= paddleX - paddleWidth/2 - 0.02f &&
+            ballX <= paddleX + paddleWidth/2 + 0.02f &&
+            ballDY < 0.05f) {
+            float hitPos = (ballX - paddleX) / (paddleWidth / 2);
+            float angle = hitPos * (3.14159f / 3.5f);
+            float speed = sqrtf(ballDX*ballDX + ballDY*ballDY);
+            ballDX = speed * sinf(angle);
+            ballDY = fabsf(speed * cosf(angle));
+            if (ballDY < 0) ballDY = -ballDY;
+        }
+
+        // brick collisions & spawn fade animation
+        for (int i=0;i<ROWS;i++) {
+            for (int j=0;j<COLS;j++) {
+                if (bricks[i][j]) {
+                    float x = brickStartX + j * (brickWidth + brickSpacingX);
+                    float y = brickStartY - i * (brickHeight + brickSpacingY);
+                    if (ballX + ballRadius > x && ballX - ballRadius < x + brickWidth &&
+                        ballY + ballRadius > y - brickHeight && ballY - ballRadius < y) {
+                        // remove and trigger fade animation
+                        bricks[i][j] = 0;
+                        brickFade[i][j] = 1.0f; // start fade
+                        score += 10;
+
+                        // reflect
+                        float overlapLeft = (ballX + ballRadius) - x;
+                        float overlapRight = (x + brickWidth) - (ballX - ballRadius);
+                        float overlapTop = (y) - (ballY - ballRadius);
+                        float overlapBottom = (ballY + ballRadius) - (y - brickHeight);
+                        bool invertX = (overlapLeft < overlapTop && overlapLeft < overlapBottom) ||
+                                       (overlapRight < overlapTop && overlapRight < overlapBottom);
+                        if (invertX) ballDX = -ballDX; else ballDY = -ballDY;
+
+                        if (rand() % 4 == 0) spawnPowerUp(ballX, ballY, (PowerType)(rand()%3));
+                    }
+                }
+                // update fade
+                if (brickFade[i][j] > 0.0f) {
+                    brickFade[i][j] -= 0.02f; // speed of fade
+                    if (brickFade[i][j] < 0.0f) brickFade[i][j] = 0.0f;
+                }
+            }
+        }
+
+        // check win
+        bool allCleared = true;
+        for (int i=0;i<ROWS && allCleared;i++) for (int j=0;j<COLS;j++) if (bricks[i][j]) { allCleared = false; break; }
+        if (allCleared) { state = STATE_WIN; ballMoving = false; }
+
+        // bottom fall
+        if (ballY < -1.1f) {
+            lives--;
+            if (lives > 0) resetBall();
+            else { ballMoving = false; state = STATE_GAMEOVER; }
+        }
+
+        // powerups fall & collect
+        for (int i=0;i<ROWS*COLS;i++) {
+            if (!powerUps[i].visible) continue;
+            powerUps[i].y += powerUps[i].vy;
+            if (powerUps[i].y <= -0.95f + paddleHeight &&
+                powerUps[i].x >= paddleX - paddleWidth/2 - 0.03f &&
+                powerUps[i].x <= paddleX + paddleWidth/2 + 0.03f) {
+                // apply
+                if (powerUps[i].type == POWER_EXTRA_LIFE) lives++;
+                else if (powerUps[i].type == POWER_FASTER_BALL) ballSpeedMultiplier *= 1.5f;
+                else if (powerUps[i].type == POWER_WIDER_PADDLE) {
+                    if (!paddleWidened) {
+                        paddleWidened = true;
+                        paddleWidth *= 1.6f;
+                        if (paddleWidth > PADDLE_MAX_WIDTH) paddleWidth = PADDLE_MAX_WIDTH;
+                        paddleWidenEndTimeMs = now + PADDLE_WIDEN_DURATION_MS;
+                    } else {
+                        paddleWidenEndTimeMs = now + PADDLE_WIDEN_DURATION_MS;
+                    }
+                }
+                score += 50;
+                powerUps[i].visible = false;
+            }
+            if (powerUps[i].y < -1.2f) powerUps[i].visible = false;
+        }
+
+        // paddle widen expire
+        if (paddleWidened && now >= paddleWidenEndTimeMs) {
+            paddleWidened = false;
+            paddleWidth /= 1.6f;
+            if (paddleWidth < PADDLE_MIN_WIDTH) paddleWidth = PADDLE_MIN_WIDTH;
+        }
+    } // end ballMoving block
+
+    glutPostRedisplay();
+    glutTimerFunc(16, update, 0);
+}
+
+// -------------------------- Input --------------------------
+void mouseMove(int x, int y) {
+    if (state != STATE_PLAYING) return;
+    float nx = (float)x / (float)g_winW * 2.0f - 1.0f;
+    if (nx < -1.0f + paddleWidth/2) nx = -1.0f + paddleWidth/2;
+    if (nx >  1.0f - paddleWidth/2) nx =  1.0f - paddleWidth/2;
+    paddleX = nx;
+}
+
+void handlePauseButtonClick(float nx, float ny) {
+    // check which button clicked (resume/restart/quit)
+    for (int b=0;b<3;b++) {
+        if (nx >= pauseButtons[b].left && nx <= pauseButtons[b].right &&
+            ny <= pauseButtons[b].top && ny >= pauseButtons[b].bottom) {
+            const char* lbl = pauseButtons[b].label;
+            if (!strcmp(lbl, "Resume")) {
+                // resume
+                state = STATE_PLAYING;
+                if (pauseStartTimeMs) {
+                    totalPausedMs += glutGet(GLUT_ELAPSED_TIME) - pauseStartTimeMs;
+                    pauseStartTimeMs = 0;
+                }
+            } else if (!strcmp(lbl, "Restart")) {
+                resetGame();
+                state = STATE_PLAYING;
+            } else if (!strcmp(lbl, "Quit")) {
+                exit(0);
+            }
+            break;
+        }
+    }
+}
+
+void mouseClick(int button, int mstate, int x, int y) {
+    if (button == GLUT_LEFT_BUTTON && mstate == GLUT_DOWN) {
+        float nx = (float)x / (float)g_winW * 2.0f - 1.0f;
+        float ny = 1.0f - (float)y / (float)g_winH * 2.0f; // convert to NDC
+
+        if (state == STATE_MENU) {
+            // Check if clicked on menu buttons
+            float nx = (float)x / (float)g_winW * 2.0f - 1.0f;
+            float ny = 1.0f - (float)y / (float)g_winH * 2.0f;
+
+            // Start Game button area
+            if (nx >= -0.25f && nx <= 0.25f && ny <= 0.10f && ny >= 0.00f) {
+                resetGame();
+                state = STATE_PLAYING;
+                gameStartTimeMs = glutGet(GLUT_ELAPSED_TIME);
+                totalPausedMs = 0;
+                lastSpeedIncreaseCheckMs = gameStartTimeMs;
+                return;
+            }
+
+            // Instructions button area
+            if (nx >= -0.25f && nx <= 0.25f && ny <= -0.05f && ny >= -0.15f) {
+                state = STATE_INSTRUCTIONS;
+                return;
+            }
+
+            // Quit button
+            if (nx >= -0.25f && nx <= 0.25f && ny <= -0.20f && ny >= -0.30f) {
+                exit(0);
+            }
+        }
+
+        if (state == STATE_INSTRUCTIONS) {
+            state = STATE_MENU;
+            return;
+        }
+
+        if (state == STATE_PLAYING) {
+            if (!ballMoving && lives > 0)
+                ballMoving = true;
+            return;
+        }
+
+        if (state == STATE_GAMEOVER || state == STATE_WIN) {
+            resetGame();
+            state = STATE_PLAYING;
+            return;
+        }
+
+        if (state == STATE_PAUSED) {
+            // check if clicked on pause menu buttons
+            handlePauseButtonClick(nx, ny);
+            // clicking outside panel resumes
+            return;
+        }
+    }
+}
+
+
+// keyboard ascii
+void keyboardASCII(unsigned char key, int x, int y) {
+    if (key == 27) exit(0);
+    if (state == STATE_MENU) {
+        if (key == ' ' || key == '\r') { resetGame(); state = STATE_PLAYING; gameStartTimeMs = glutGet(GLUT_ELAPSED_TIME); totalPausedMs = 0; lastSpeedIncreaseCheckMs = gameStartTimeMs; }
+    } else if (state == STATE_PLAYING) {
+        if (key == ' ') { if (!ballMoving && lives > 0) ballMoving = true; }
+        else if (key == 'p' || key == 'P') { state = STATE_PAUSED; pauseStartTimeMs = glutGet(GLUT_ELAPSED_TIME); }
+        else if (key == 'r' || key == 'R') { resetGame(); }
+        else if (key == 'a' || key == 'A') { paddleX -= 0.06f; if (paddleX - paddleWidth/2 < -1.0f) paddleX = -1.0f + paddleWidth/2; }
+        else if (key == 'd' || key == 'D') { paddleX += 0.06f; if (paddleX + paddleWidth/2 >  1.0f) paddleX =  1.0f - paddleWidth/2; }
+    } else if (state == STATE_PAUSED) {
+        if (key == 'p' || key == 'P') {
+            state = STATE_PLAYING;
+            if (pauseStartTimeMs) { totalPausedMs += glutGet(GLUT_ELAPSED_TIME) - pauseStartTimeMs; pauseStartTimeMs = 0; }
+        }
+    } else if (state == STATE_GAMEOVER || state == STATE_WIN) {
+        if (key == 'r' || key == 'R' || key == ' ') { resetGame(); state = STATE_PLAYING; }
+    }
+}
+
+// arrow keys
+void keyboardSpecial(int key, int x, int y) {
+    if (state != STATE_PLAYING) return;
+    const float step = 0.06f;
+    if (key == GLUT_KEY_LEFT) { paddleX -= step; if (paddleX - paddleWidth/2 < -1.0f) paddleX = -1.0f + paddleWidth/2; }
+    else if (key == GLUT_KEY_RIGHT) { paddleX += step; if (paddleX + paddleWidth/2 > 1.0f) paddleX = 1.0f - paddleWidth/2; }
+}
+
+// -------------------------- Window & init --------------------------
+void reshape(int w, int h) {
+    g_winW = w; g_winH = h;
+    glViewport(0,0,w,h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(-1,1,-1,1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    // recompute brick layout in case spacing needs to adapt in future
+    computeBrickLayout();
+}
+
+// -------------------------- Initialization --------------------------
+void initPauseButtons() {
+    // centered vertically; normalized coordinates (NDC)
+    float bW = 0.30f, bH = 0.10f;
+    float cx = 0.0f, cy = 0.05f;
+    pauseButtons[0] = { cx - bW/2, cx + bW/2, cy + bH/2, cy - bH/2, "Resume" };
+    pauseButtons[1] = { cx - bW/2, cx + bW/2, cy - bH/2 - 0.05f, cy - bH/2 - 0.15f, "Restart" };
+    pauseButtons[2] = { cx - bW/2, cx + bW/2, cy - bH/2 - 0.25f, cy - bH/2 - 0.35f, "Quit" };
+}
+
+int main(int argc, char** argv) {
+    srand(time(NULL));
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+    glutInitWindowSize(g_winW, g_winH);
+    glutCreateWindow("DX-Ball Enhanced - Centered Bricks");
+
+    glClearColor(0,0,0,1);
+    glMatrixMode(GL_PROJECTION);
+    gluOrtho2D(-1,1,-1,1);
+
+    // callbacks
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutPassiveMotionFunc(mouseMove);
+    glutMouseFunc(mouseClick);
+    glutKeyboardFunc(keyboardASCII);
+    glutSpecialFunc(keyboardSpecial);
+    glutTimerFunc(0, update, 0);
+
+    // GL state
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // init game + UI
+    initPauseButtons();
+    state = STATE_MENU;
+    computeBrickLayout();
+    resetGame();
+
+    glutMainLoop();
+    return 0;
+}
