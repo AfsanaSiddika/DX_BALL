@@ -968,6 +968,38 @@ void mouseMove(int x, int y)
     paddleX = nx;
 }
 
+void handlePauseButtonClick(float nx, float ny)
+{
+    // check which button clicked (resume/restart/quit)
+    for (int b=0; b<3; b++)
+    {
+        if (nx >= pauseButtons[b].left && nx <= pauseButtons[b].right &&
+                ny <= pauseButtons[b].top && ny >= pauseButtons[b].bottom)
+        {
+            const char* lbl = pauseButtons[b].label;
+            if (!strcmp(lbl, "Resume"))
+            {
+                // resume
+                state = STATE_PLAYING;
+                if (pauseStartTimeMs)
+                {
+                    totalPausedMs += glutGet(GLUT_ELAPSED_TIME) - pauseStartTimeMs;
+                    pauseStartTimeMs = 0;
+                }
+            }
+            else if (!strcmp(lbl, "Restart"))
+            {
+                resetGame();
+                state = STATE_PLAYING;
+            }
+            else if (!strcmp(lbl, "Quit"))
+            {
+                exit(0);
+            }
+            break;
+        }
+    }
+}
 
 
 
