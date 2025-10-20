@@ -959,6 +959,14 @@ void update(int value)
     glutTimerFunc(16, update, 0);
 }
 
+void mouseMove(int x, int y)
+{
+    if (state != STATE_PLAYING) return;
+    float nx = (float)x / (float)g_winW * 2.0f - 1.0f;
+    if (nx < -1.0f + paddleWidth/2) nx = -1.0f + paddleWidth/2;
+    if (nx >  1.0f - paddleWidth/2) nx =  1.0f - paddleWidth/2;
+    paddleX = nx;
+}
 
 
 
