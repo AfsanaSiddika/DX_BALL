@@ -1001,6 +1001,77 @@ void handlePauseButtonClick(float nx, float ny)
     }
 }
 
+void mouseClick(int button, int mstate, int x, int y)
+{
+    if (button == GLUT_LEFT_BUTTON && mstate == GLUT_DOWN)
+    {
+        float nx = (float)x / (float)g_winW * 2.0f - 1.0f;
+        float ny = 1.0f - (float)y / (float)g_winH * 2.0f; // convert to NDC
+
+        if (state == STATE_MENU)
+        {
+            // Check if clicked on menu buttons
+            float nx = (float)x / (float)g_winW * 2.0f - 1.0f;
+            float ny = 1.0f - (float)y / (float)g_winH * 2.0f;
+
+            // Start Game button area
+            if (nx >= -0.25f && nx <= 0.25f && ny <= 0.10f && ny >= 0.00f)
+            {
+                resetGame();
+                state = STATE_PLAYING;
+                gameStartTimeMs = glutGet(GLUT_ELAPSED_TIME);
+                totalPausedMs = 0;
+                lastSpeedIncreaseCheckMs = gameStartTimeMs;
+                return;
+            }
+
+            // Instructions button area
+            if (nx >= -0.25f && nx <= 0.25f && ny <= -0.05f && ny >= -0.15f)
+            {
+                state = STATE_INSTRUCTIONS;
+                return;
+            }
+
+            // Quit button
+            if (nx >= -0.25f && nx <= 0.25f && ny <= -0.20f && ny >= -0.30f)
+            {
+                exit(0);
+            }
+        }
+
+        if (state == STATE_INSTRUCTIONS)
+        {
+            state = STATE_MENU;
+            return;
+        }
+
+        if (state == STATE_PLAYING)
+        {
+            if (!ballMoving && lives > 0)
+                ballMoving = true;
+            return;
+        }
+
+        if (state == STATE_GAMEOVER || state == STATE_WIN)
+        {
+            resetGame();
+            state = STATE_PLAYING;
+            return;
+        }
+
+        if (state == STATE_PAUSED)
+        {
+            // check if clicked on pause menu buttons
+            handlePauseButtonClick(nx, ny);
+            // clicking outside panel resumes
+            return;
+        }
+    }
+}
+
+
+
+
 
 
 
