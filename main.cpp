@@ -704,6 +704,13 @@ void drawWinScreenOverlay()
     drawText(-0.22f, -0.18f, "Press ESC to exit");
 }
 
+// GameOverOverlay function name
+void drawGameOverOverlay()
+{
+    drawGameOverScreenOverlay();
+}
+
+
 
 
 
