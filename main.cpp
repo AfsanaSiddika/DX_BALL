@@ -694,6 +694,19 @@ void drawWinScreenOverlay()
     glColor3f(1,1,0.2f);
     drawText(-0.18f, 0.15f, "🏆 YOU WIN! 🏆");
 
+// final score
+    char buffer[32];
+    sprintf(buffer, "Final Score: %d", score);
+    drawText(-0.15f, 0.05f, buffer);
+
+    // instructions
+    drawText(-0.22f, -0.1f, "Click LEFT MOUSE to play again");
+    drawText(-0.22f, -0.18f, "Press ESC to exit");
+}
+
+
+
+
 
 
 
