@@ -758,6 +758,134 @@ void display()
     glutSwapBuffers();
 }
 
+void spawnPowerUp(float x, float y, PowerType t)
+{
+    for (int i=0; i<ROWS*COLS; i++)
+    {
+        if (!powerUps[i].visible)
+        {
+            powerUps[i].visible = true;
+            powerUps[i].type = t;
+            powerUps[i].x = x;
+            powerUps[i].y = y;
+            powerUps[i].vy = -0.008f - (rand()%8)/1000.0f;
+            break;
+        }
+    }
+}
+void update(int value)
+{
+    int now = glutGet(GLUT_ELAPSED_TIME);
+
+    // If not playing, skip ball movement (but keep redisplay and timer)
+    if (state != STATE_PLAYING)
+    {
+        glutPostRedisplay();
+        glutTimerFunc(16, update, 0);
+        return;
+    }
+
+    // Speed ramp over time
+    if (now - lastSpeedIncreaseCheckMs >= SPEED_INCREASE_INTERVAL_MS)
+    {
+        lastSpeedIncreaseCheckMs = now;
+        ballDX *= SPEED_INCREASE_FACTOR;
+        ballDY *= SPEED_INCREASE_FACTOR;
+    }
+
+    // Update trail buffer
+    for (int i = TRAIL_LEN - 1; i > 0; --i)
+    {
+        trailX[i] = trailX[i - 1];
+        trailY[i] = trailY[i - 1];
+    }
+    trailX[0] = ballX;
+    trailY[0] = ballY;
+
+    if (lives > 0 && ballMoving)
+    {
+        // Move ball
+        ballX += ballDX * ballSpeedMultiplier;
+        ballY += ballDY * ballSpeedMultiplier;
+
+        // Wall collisions
+        if (ballX + ballRadius > 1.0f)
+        {
+            ballX = 1.0f - ballRadius;
+            ballDX = -fabs(ballDX);
+        }
+        if (ballX - ballRadius < -1.0f)
+        {
+            ballX = -1.0f + ballRadius;
+            ballDX = fabs(ballDX);
+        }
+        if (ballY + ballRadius > 1.0f)
+        {
+            ballY = 1.0f - ballRadius;
+            ballDY = -fabs(ballDY);
+        }
+
+        // Paddle collision
+        if (ballY - ballRadius <= -0.95f + paddleHeight &&
+                ballY - ballRadius >= -0.95f - 0.02f &&
+                ballX >= paddleX - paddleWidth/2 - 0.02f &&
+                ballX <= paddleX + paddleWidth/2 + 0.02f &&
+                ballDY < 0.05f)
+        {
+            float hitPos = (ballX - paddleX) / (paddleWidth / 2);
+            float angle = hitPos * (3.14159f / 3.5f);  // wider angle control
+            float speed = sqrtf(ballDX * ballDX + ballDY * ballDY);
+            ballDX = speed * sinf(angle);
+            ballDY = fabsf(speed * cosf(angle));
+            if (ballDY < 0) ballDY = -ballDY;
+        }
+
+        // Brick collisions & fade animation
+        for (int i = 0; i < ROWS; i++)
+        {
+            for (int j = 0; j < COLS; j++)
+            {
+                if (bricks[i][j])
+                {
+                    float x = brickStartX + j * (brickWidth + brickSpacingX);
+                    float y = brickStartY - i * (brickHeight + brickSpacingY);
+
+                    if (ballX + ballRadius > x && ballX - ballRadius < x + brickWidth &&
+                            ballY + ballRadius > y - brickHeight && ballY - ballRadius < y)
+                    {
+                        // destroy brick & trigger fade
+                        bricks[i][j] = 0;
+                        brickFade[i][j] = 1.0f;
+                        score += 10;
+
+                        // Collision response
+                        float overlapLeft   = (ballX + ballRadius) - x;
+                        float overlapRight  = (x + brickWidth) - (ballX - ballRadius);
+                        float overlapTop    = (y) - (ballY - ballRadius);
+                        float overlapBottom = (ballY + ballRadius) - (y - brickHeight);
+
+                        bool invertX = (overlapLeft < overlapTop && overlapLeft < overlapBottom) ||
+                                       (overlapRight < overlapTop && overlapRight < overlapBottom);
+                        if (invertX) ballDX = -ballDX;
+                        else         ballDY = -ballDY;
+
+                        // Random powerup spawn
+                        if (rand() % 4 == 0)
+                            spawnPowerUp(ballX, ballY, (PowerType)(rand() % 3));
+                    }
+                }
+
+                // Brick fade update
+                if (brickFade[i][j] > 0.0f)
+                {
+                    brickFade[i][j] -= 0.02f;
+                    if (brickFade[i][j] < 0.0f) brickFade[i][j] = 0.0f;
+                }
+            }
+        }
+
+
+
 
 
 
