@@ -1172,6 +1172,45 @@ void initPauseButtons()
     pauseButtons[2] = { cx - bW/2, cx + bW/2, cy - bH/2 - 0.25f, cy - bH/2 - 0.35f, "Quit" };
 }
 
+int main(int argc, char** argv)
+{
+    srand(time(NULL));
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+    glutInitWindowSize(g_winW, g_winH);
+    glutCreateWindow("DX-Ball Enhanced - Centered Bricks");
+
+    glClearColor(0,0,0,1);
+    glMatrixMode(GL_PROJECTION);
+    gluOrtho2D(-1,1,-1,1);
+
+    // callbacks
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutPassiveMotionFunc(mouseMove);
+    glutMouseFunc(mouseClick);
+    glutKeyboardFunc(keyboardASCII);
+    glutSpecialFunc(keyboardSpecial);
+    glutTimerFunc(0, update, 0);
+
+    // GL state
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // init game + UI
+    initPauseButtons();
+    state = STATE_MENU;
+    computeBrickLayout();
+    resetGame();
+
+    glutMainLoop();
+    return 0;
+}
+
+
+
+
+
 
 
 
