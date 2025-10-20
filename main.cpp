@@ -1132,6 +1132,25 @@ void keyboardASCII(unsigned char key, int x, int y)
     }
 }
 
+// arrow keys
+void keyboardSpecial(int key, int x, int y)
+{
+    if (state != STATE_PLAYING) return;
+    const float step = 0.06f;
+    if (key == GLUT_KEY_LEFT)
+    {
+        paddleX -= step;
+        if (paddleX - paddleWidth/2 < -1.0f) paddleX = -1.0f + paddleWidth/2;
+    }
+    else if (key == GLUT_KEY_RIGHT)
+    {
+        paddleX += step;
+        if (paddleX + paddleWidth/2 > 1.0f) paddleX = 1.0f - paddleWidth/2;
+    }
+}
+
+
+
 
 
 
