@@ -1069,6 +1069,71 @@ void mouseClick(int button, int mstate, int x, int y)
     }
 }
 
+// keyboard ascii
+void keyboardASCII(unsigned char key, int x, int y)
+{
+    if (key == 27) exit(0);
+    if (state == STATE_MENU)
+    {
+        if (key == ' ' || key == '\r')
+        {
+            resetGame();
+            state = STATE_PLAYING;
+            gameStartTimeMs = glutGet(GLUT_ELAPSED_TIME);
+            totalPausedMs = 0;
+            lastSpeedIncreaseCheckMs = gameStartTimeMs;
+        }
+    }
+    else if (state == STATE_PLAYING)
+    {
+        if (key == ' ')
+        {
+            if (!ballMoving && lives > 0) ballMoving = true;
+        }
+        else if (key == 'p' || key == 'P')
+        {
+            state = STATE_PAUSED;
+            pauseStartTimeMs = glutGet(GLUT_ELAPSED_TIME);
+        }
+        else if (key == 'r' || key == 'R')
+        {
+            resetGame();
+        }
+        else if (key == 'a' || key == 'A')
+        {
+            paddleX -= 0.06f;
+            if (paddleX - paddleWidth/2 < -1.0f) paddleX = -1.0f + paddleWidth/2;
+        }
+        else if (key == 'd' || key == 'D')
+        {
+            paddleX += 0.06f;
+            if (paddleX + paddleWidth/2 >  1.0f) paddleX =  1.0f - paddleWidth/2;
+        }
+    }
+    else if (state == STATE_PAUSED)
+    {
+        if (key == 'p' || key == 'P')
+        {
+            state = STATE_PLAYING;
+            if (pauseStartTimeMs)
+            {
+                totalPausedMs += glutGet(GLUT_ELAPSED_TIME) - pauseStartTimeMs;
+                pauseStartTimeMs = 0;
+            }
+        }
+    }
+    else if (state == STATE_GAMEOVER || state == STATE_WIN)
+    {
+        if (key == 'r' || key == 'R' || key == ' ')
+        {
+            resetGame();
+            state = STATE_PLAYING;
+        }
+    }
+}
+
+
+
 
 
 
