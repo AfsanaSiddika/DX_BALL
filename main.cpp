@@ -1149,6 +1149,22 @@ void keyboardSpecial(int key, int x, int y)
     }
 }
 
+void reshape(int w, int h)
+{
+    g_winW = w;
+    g_winH = h;
+    glViewport(0,0,w,h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(-1,1,-1,1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    // recompute brick layout in case spacing needs to adapt in future
+    computeBrickLayout();
+}
+
+
+
 
 
 
