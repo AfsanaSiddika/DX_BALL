@@ -1162,6 +1162,17 @@ void reshape(int w, int h)
     // recompute brick layout in case spacing needs to adapt in future
     computeBrickLayout();
 }
+void initPauseButtons()
+{
+    // centered vertically; normalized coordinates (NDC)
+    float bW = 0.30f, bH = 0.10f;
+    float cx = 0.0f, cy = 0.05f;
+    pauseButtons[0] = { cx - bW/2, cx + bW/2, cy + bH/2, cy - bH/2, "Resume" };
+    pauseButtons[1] = { cx - bW/2, cx + bW/2, cy - bH/2 - 0.05f, cy - bH/2 - 0.15f, "Restart" };
+    pauseButtons[2] = { cx - bW/2, cx + bW/2, cy - bH/2 - 0.25f, cy - bH/2 - 0.35f, "Quit" };
+}
+
+
 
 
 
