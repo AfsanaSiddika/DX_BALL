@@ -690,6 +690,13 @@ void drawWinScreenOverlay()
     glVertex2f(-panelW/2, -panelH/2);
     glEnd();
 
+ // title
+    glColor3f(1,1,0.2f);
+    drawText(-0.18f, 0.15f, "🏆 YOU WIN! 🏆");
+
+
+
+
 
 
 
