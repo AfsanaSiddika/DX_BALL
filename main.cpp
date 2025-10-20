@@ -274,6 +274,68 @@ void drawBallTrail() {
     }
     glDisable(GL_BLEND);
 }
+void update(int value)
+
+// Game Over screen overlay with larger panel and centered text
+void drawGameOverScreenOverlay()
+{
+    // Dim background
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, 0.6f);
+    glBegin(GL_QUADS);
+        glVertex2f(-1, -1);
+        glVertex2f( 1, -1);
+        glVertex2f( 1,  1);
+        glVertex2f(-1,  1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // Larger Panel
+    float panelW = 0.75f; // increased width
+    float panelH = 0.6f;  // increased height
+    float panelX = 0.0f;
+    float panelY = 0.0f;
+
+    glColor3f(0.1f, 0.1f, 0.15f); // dark panel
+    glBegin(GL_QUADS);
+        glVertex2f(panelX - panelW/2, panelY + panelH/2);
+        glVertex2f(panelX + panelW/2, panelY + panelH/2);
+        glVertex2f(panelX + panelW/2, panelY - panelH/2);
+        glVertex2f(panelX - panelW/2, panelY - panelH/2);
+    glEnd();
+
+    // Border
+    glLineWidth(3.0f);
+    glColor3f(1.0f, 0.2f, 0.2f);
+    glBegin(GL_LINE_LOOP);
+        glVertex2f(panelX - panelW/2, panelY + panelH/2);
+        glVertex2f(panelX + panelW/2, panelY + panelH/2);
+        glVertex2f(panelX + panelW/2, panelY - panelH/2);
+        glVertex2f(panelX - panelW/2, panelY - panelH/2);
+    glEnd();
+
+    // Updated Y positions for larger panel
+    float titleY = 0.2f;
+    float scoreY = 0.08f;
+    float instr1Y = -0.08f;
+    float instr2Y = -0.18f;
+
+    // Title
+    glColor3f(1.0f, 0.2f, 0.2f); // red
+    drawText(-0.18f, titleY, "💀 GAME OVER 💀");
+
+    // Score
+    char buffer[32];
+    sprintf(buffer, "Final Score: %d", score);
+    glColor3f(1.0f, 1.0f, 1.0f); // white
+    drawText(-0.12f, scoreY, buffer);
+
+    // Instructions
+    glColor3f(0.8f, 0.8f, 0.8f); // light gray
+    drawText(-0.25f, instr1Y, "Click LEFT MOUSE to RESTART");
+    drawText(-0.15f, instr2Y, "Press ESC to QUIT");
+}
 
 
 
