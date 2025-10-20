@@ -884,6 +884,83 @@ void update(int value)
             }
         }
 
+// Check win
+        bool allCleared = true;
+        for (int i = 0; i < ROWS && allCleared; i++)
+            for (int j = 0; j < COLS; j++)
+                if (bricks[i][j])
+                {
+                    allCleared = false;
+                    break;
+                }
+        if (allCleared)
+        {
+            state = STATE_WIN;
+            ballMoving = false;
+        }
+
+        // Ball fall (lose life)
+        if (ballY < -1.1f)
+        {
+            lives--;
+            if (lives > 0) resetBall();
+            else
+            {
+                ballMoving = false;
+                state = STATE_GAMEOVER;
+            }
+        }
+
+        // Powerups fall & collect
+        for (int i = 0; i < ROWS * COLS; i++)
+        {
+            if (!powerUps[i].visible) continue;
+            powerUps[i].y += powerUps[i].vy;
+
+            // Paddle collect
+            if (powerUps[i].y <= -0.95f + paddleHeight &&
+                    powerUps[i].x >= paddleX - paddleWidth/2 - 0.03f &&
+                    powerUps[i].x <= paddleX + paddleWidth/2 + 0.03f)
+            {
+                if (powerUps[i].type == POWER_EXTRA_LIFE) lives++;
+                else if (powerUps[i].type == POWER_FASTER_BALL) ballSpeedMultiplier *= 1.5f;
+                else if (powerUps[i].type == POWER_WIDER_PADDLE)
+                {
+                    if (!paddleWidened)
+                    {
+                        paddleWidened = true;
+                        paddleWidth *= 1.6f;
+                        if (paddleWidth > PADDLE_MAX_WIDTH) paddleWidth = PADDLE_MAX_WIDTH;
+                        paddleWidenEndTimeMs = now + PADDLE_WIDEN_DURATION_MS;
+                    }
+                    else
+                    {
+                        paddleWidenEndTimeMs = now + PADDLE_WIDEN_DURATION_MS;
+                    }
+                }
+                score += 50;
+                powerUps[i].visible = false;
+            }
+
+            // Missed
+            if (powerUps[i].y < -1.2f) powerUps[i].visible = false;
+        }
+
+        // Paddle widen expire
+        if (paddleWidened && now >= paddleWidenEndTimeMs)
+        {
+            paddleWidened = false;
+            paddleWidth /= 1.6f;
+            if (paddleWidth < PADDLE_MIN_WIDTH) paddleWidth = PADDLE_MIN_WIDTH;
+        }
+    } // end ballMoving
+
+    glutPostRedisplay();
+    glutTimerFunc(16, update, 0);
+}
+
+
+
 
 
 
