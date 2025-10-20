@@ -665,3 +665,26 @@ void drawFireworks()
     }
 }
 
+// Win screen overlay
+void drawWinScreenOverlay()
+
+{
+    // dim background
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, 0.6f);
+    glBegin(GL_QUADS);
+    glVertex2f(-1,-1);
+    glVertex2f(1,-1);
+    glVertex2f(1,1);
+    glVertex2f(-1,1);
+    glEnd();
+    glDisable(GL_BLEND);
+
+
+
+
+
+
+
+
