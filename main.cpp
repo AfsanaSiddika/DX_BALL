@@ -680,6 +680,17 @@ void drawWinScreenOverlay()
     glVertex2f(-1,1);
     glEnd();
     glDisable(GL_BLEND);
+ // panel
+    float panelW = 0.6f, panelH = 0.5f;
+    glColor3f(0.1f, 0.1f, 0.15f);
+    glBegin(GL_QUADS);
+    glVertex2f(-panelW/2, panelH/2);
+    glVertex2f(panelW/2, panelH/2);
+    glVertex2f(panelW/2, -panelH/2);
+    glVertex2f(-panelW/2, -panelH/2);
+    glEnd();
+
+
 
 
 
