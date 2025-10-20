@@ -710,6 +710,57 @@ void drawGameOverOverlay()
     drawGameOverScreenOverlay();
 }
 
+void display()
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    drawBackground();
+
+    // Draw gameplay elements only when playing or paused
+    if (state == STATE_PLAYING || state == STATE_PAUSED)
+    {
+        drawBricks();
+        drawBallTrail();
+        drawPaddle();
+        drawBallGlow();
+        drawBallCore();
+        drawPowerUps();
+    }
+
+    // HUD always on top
+    drawHUD();
+
+    // overlay depending on state
+    switch (state)
+    {
+    case STATE_MENU:
+        drawMenuScreenOverlay();
+        break;
+    case STATE_INSTRUCTIONS:
+        drawInstructionsOverlay();
+        break;
+    case STATE_PAUSED:
+        drawPauseMenuOverlay();
+        break;
+    case STATE_GAMEOVER:
+        drawGameOverOverlay();
+        break;
+    case STATE_WIN:
+        drawWinScreenOverlay();
+        break;
+    default:
+        break;
+    }
+
+    // fireworks only for WIN
+    if (state == STATE_WIN) drawFireworks();
+
+    glutSwapBuffers();
+}
+
+
+
+
 
 
 
