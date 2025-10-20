@@ -645,3 +645,23 @@ void drawPauseMenuOverlay()
         drawText(tx, ty, b.label);
     }
 }
+
+    // Fireworks (simple)
+void drawFireworks()
+{
+    if (state != STATE_WIN) return;
+    int now = glutGet(GLUT_ELAPSED_TIME);
+    srand(now / 90);
+    for (int k=0; k<25; k++)
+    {
+        float x = (rand()%200 - 100)/100.0f;
+        float y = (rand()%140 - 20)/100.0f;
+        float r = rand()%256/255.0f, g = rand()%256/255.0f, b = rand()%256/255.0f;
+        glColor3f(r,g,b);
+        glBegin(GL_LINES);
+        glVertex2f(x, y);
+        glVertex2f(x + (rand()%40 - 20)/200.0f, y + (rand()%40 - 20)/200.0f);
+        glEnd();
+    }
+}
+
