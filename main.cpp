@@ -87,12 +87,21 @@ void drawText(float x, float y, const char* text) {
 }
 
 // -------------------------- Brick layout helper --------------------------
-void computeBrickLayout() {
+void computeBrickLayout()
+{
+    float marginX = 0.05f;
+    float marginY = 0.10f; // top margin
+
     float totalW = COLS * brickWidth + (COLS - 1) * brickSpacingX;
     float totalH = ROWS * brickHeight + (ROWS - 1) * brickSpacingY;
-    // center the grid around (0,0)
+
     brickStartX = -totalW * 0.5f;
-    brickStartY = totalH * 0.5f;
+
+    brickStartY = 1.0f - marginY;
+    brickStartY -= (brickHeight * 0.5f);
+
+    // extra downward shift
+    brickStartY -= 0.05f;
 }
 
 // -------------------------- Game control --------------------------
@@ -265,5 +274,6 @@ void drawBallTrail() {
     }
     glDisable(GL_BLEND);
 }
+
 
 
