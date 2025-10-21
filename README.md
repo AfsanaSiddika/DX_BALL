@@ -26,6 +26,7 @@ Make sure you have these installed:
 
 ### 🖥️ Compile Command
 
-#### 🐧 Linux / macOS
+### 🐧 On Linux / macOS
+#### 1️⃣ Install dependencies
 ```bash
-g++ dx_ball_visuals.cpp -o dx_ball_visuals -lGL -lGLU -lglut
+sudo apt-get install freeglut3 freeglut3-dev
